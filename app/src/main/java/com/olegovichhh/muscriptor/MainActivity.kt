@@ -42,14 +42,25 @@ private fun MuScriptorScreen() {
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
+                val displayName = uri.lastPathSegment.orEmpty().lowercase()
+                require(displayName.endsWith(".gguf") || displayName.contains("gguf")) {
+                    "Выберите файл модели MuScriptor в формате .gguf"
+                }
                 modelFile.parentFile?.mkdirs()
                 context.contentResolver.openInputStream(uri)!!.use { input ->
                     modelFile.outputStream().use { output -> input.copyTo(output) }
                 }
+                require(modelFile.length() > 150L * 1024 * 1024) {
+                    "Файл слишком мал для MuScriptor Small GGUF"
+                }
             }.onSuccess {
                 modelReady = true
                 status = "MuScriptor Small установлен: " + (modelFile.length() / 1024 / 1024) + " МБ"
-            }.onFailure { status = "Ошибка модели: " + (it.message ?: "unknown") }
+            }.onFailure {
+                modelFile.delete()
+                modelReady = false
+                status = "Ошибка модели: " + (it.message ?: "unknown")
+            }
         }
     }
 
