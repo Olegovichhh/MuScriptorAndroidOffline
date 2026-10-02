@@ -33,7 +33,7 @@ private fun MuScriptorScreen() {
     var status by remember { mutableStateOf("Установите модель и выберите аудио") }
     var busy by remember { mutableStateOf(false) }
     val modelFile = remember { File(context.filesDir, "models/muscriptor-small-f16.gguf") }
-    var modelReady by remember { mutableStateOf(modelFile.exists()) }
+    var modelReady by remember { mutableStateOf(modelFile.exists() && modelFile.length() > 150L * 1024 * 1024) }
 
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         audio = it
@@ -48,7 +48,7 @@ private fun MuScriptorScreen() {
                 }
             }.onSuccess {
                 modelReady = true
-                status = "Модель установлена локально"
+                status = "MuScriptor Small установлен: " + (modelFile.length() / 1024 / 1024) + " МБ"
             }.onFailure { status = "Ошибка модели: " + (it.message ?: "unknown") }
         }
     }
@@ -63,7 +63,7 @@ private fun MuScriptorScreen() {
             Spacer(Modifier.height(8.dp))
             Text("Audio → MIDI / MusicXML", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(28.dp))
-            Text(if (modelReady) "✓ Small GGUF установлена" else "Модель не установлена")
+            Text(if (modelReady) "✓ MuScriptor Small GGUF: " + (modelFile.length() / 1024 / 1024) + " МБ" else "Нужна MuScriptor Small GGUF (~200 MiB)")
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = { modelPicker.launch(arrayOf("application/octet-stream","*/*")) }, enabled = !busy) {
                 Text(if (modelReady) "Заменить модель GGUF" else "Установить модель GGUF")
