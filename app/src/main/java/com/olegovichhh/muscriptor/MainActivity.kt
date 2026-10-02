@@ -2,7 +2,6 @@ package com.olegovichhh.muscriptor
 
 import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,27 +42,19 @@ private fun MuScriptorScreen() {
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
-                val displayName = context.contentResolver.query(
-                    uri,
-                    arrayOf(OpenableColumns.DISPLAY_NAME),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (cursor.moveToFirst() && nameIndex >= 0) cursor.getString(nameIndex) else null
-                }
-                if (!displayName.isNullOrBlank()) {
-                    require(displayName.lowercase().endsWith(".gguf")) {
-                        "Выбран файл '$displayName'. Нужна модель MuScriptor .gguf"
-                    }
-                }
                 modelFile.parentFile?.mkdirs()
                 context.contentResolver.openInputStream(uri)!!.use { input ->
                     modelFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 require(modelFile.length() > 150L * 1024 * 1024) {
                     "Файл слишком мал для MuScriptor Small GGUF"
+                }
+                val header = ByteArray(4)
+                modelFile.inputStream().use { input ->
+                    require(input.read(header) == 4) { "Не удалось прочитать модель" }
+                }
+                require(header.contentEquals(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))) {
+                    "Выбранный файл не является GGUF-моделью"
                 }
             }.onSuccess {
                 modelReady = true
