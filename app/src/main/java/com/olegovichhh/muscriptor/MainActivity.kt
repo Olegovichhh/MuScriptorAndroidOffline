@@ -11,7 +11,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.olegovichhh.muscriptor.engine.LocalTranscriptionEngine
+import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,12 +26,33 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MuScriptorScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val engine = remember { LocalTranscriptionEngine() }
     var audio by remember { mutableStateOf<Uri?>(null) }
-    var status by remember { mutableStateOf("Выберите аудиофайл") }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+    var status by remember { mutableStateOf("Установите модель и выберите аудио") }
+    var busy by remember { mutableStateOf(false) }
+    val modelFile = remember { File(context.filesDir, "models/muscriptor-small-f16.gguf") }
+    var modelReady by remember { mutableStateOf(modelFile.exists()) }
+
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         audio = it
-        status = if (it == null) "Файл не выбран" else "Аудио готово к локальной транскрипции"
+        if (it != null) status = "Аудио выбрано"
     }
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                modelFile.parentFile?.mkdirs()
+                context.contentResolver.openInputStream(uri)!!.use { input ->
+                    modelFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }.onSuccess {
+                modelReady = true
+                status = "Модель установлена локально"
+            }.onFailure { status = "Ошибка модели: " + (it.message ?: "unknown") }
+        }
+    }
+
     Surface(Modifier.fillMaxSize()) {
         Column(
             Modifier.fillMaxSize().padding(24.dp),
@@ -35,15 +60,34 @@ private fun MuScriptorScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("MuScriptor Offline", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Text("Audio → MIDI / MusicXML", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(32.dp))
-            Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("Выбрать аудио") }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(28.dp))
+            Text(if (modelReady) "✓ Small GGUF установлена" else "Модель не установлена")
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = { modelPicker.launch(arrayOf("application/octet-stream","*/*")) }, enabled = !busy) {
+                Text(if (modelReady) "Заменить модель GGUF" else "Установить модель GGUF")
+            }
+            Spacer(Modifier.height(14.dp))
+            Button(onClick = { audioPicker.launch(arrayOf("audio/*")) }, enabled = !busy) { Text("Выбрать аудио") }
+            Spacer(Modifier.height(18.dp))
+            Button(
+                enabled = audio != null && modelReady && !busy,
+                onClick = {
+                    busy = true; status = "Транскрипция на устройстве…"
+                    scope.launch {
+                        val result = engine.transcribe(context, audio!!)
+                        status = result.fold(
+                            onSuccess = { "Готово. MIDI: " + it.midiPath },
+                            onFailure = { "Ошибка: " + (it.message ?: it.javaClass.simpleName) }
+                        )
+                        busy = false
+                    }
+                }
+            ) { Text(if (busy) "Обработка…" else "Транскрибировать") }
+            if (busy) { Spacer(Modifier.height(16.dp)); CircularProgressIndicator() }
+            Spacer(Modifier.height(18.dp))
             Text(status)
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = { status = if (audio == null) "Сначала выберите аудио" else "Подготовка офлайн-движка…" },
-                enabled = audio != null) { Text("Транскрибировать") }
         }
     }
 }
